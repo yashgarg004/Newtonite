@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { Tx } from '../db/transaction';
+import { prisma } from '../db/prisma';
 
 export async function recordEvent(tx: Tx, e: {
   itemId: string;
@@ -17,6 +18,22 @@ export async function recordEvent(tx: Tx, e: {
       from_value: e.from ?? null,
       to_value: e.to ?? null,
       payload: e.payload ?? {},
+    },
+  });
+}
+
+export async function listActivity(itemId: string) {
+  return prisma.activity_events.findMany({
+    where: { item_id: itemId },
+    orderBy: { id: 'desc' },
+    select: {
+      id: true,
+      actor_id: true,
+      event_type: true,
+      from_value: true,
+      to_value: true,
+      payload: true,
+      created_at: true,
     },
   });
 }

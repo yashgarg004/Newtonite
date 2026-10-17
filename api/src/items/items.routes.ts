@@ -2,11 +2,17 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../auth/auth.middleware';
-import { authorize } from '../auth/authorize';
 import { AppError } from '../errors/app-error';
-import { createItemSchema, listItemsQuerySchema, updateItemSchema } from './items.schemas';
+import {
+  createItemSchema,
+  listItemsQuerySchema,
+  updateItemSchema,
+  transitionSchema,
+  commentSchema,
+} from './items.schemas';
 import { listItems } from './items.queries';
-import { createItem } from './items.service';
+import { createItem, updateItem, claimItem, transitionItem, addComment } from './items.service';
+import { listActivity } from './activity.service';
 
 const itemParamsSchema = z.object({ id: z.string().uuid() });
 const idempotencyKeySchema = z.string().min(8).max(128);
@@ -20,18 +26,10 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
       throw new AppError(400, 'VALIDATION_ERROR', 'Missing Idempotency-Key header');
     }
     const key = idempotencyKeySchema.parse(keyHeader);
-
     const body = createItemSchema.parse(req.body);
-    const result = await createItem(req.user!, {
-      key,
-      method: req.method,
-      path: req.path,
-      body,
-    });
 
-    if (result.replay) {
-      res.set('Idempotent-Replay', 'true');
-    }
+    const result = await createItem(req.user!, { key, method: req.method, path: req.path, body });
+    if (result.replay) res.set('Idempotent-Replay', 'true');
     res.status(result.status).json(result.body);
   } catch (err) {
     next(err);
@@ -42,15 +40,11 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
   try {
     const query = listItemsQuerySchema.parse(req.query);
     const user = req.user!;
-
     let teamIds = Array.from(user.memberships.keys());
     if (query.teamId) {
-      if (!user.memberships.has(query.teamId)) {
-        return res.json({ items: [], nextCursor: null });
-      }
+      if (!user.memberships.has(query.teamId)) return res.json({ items: [], nextCursor: null });
       teamIds = [query.teamId];
     }
-
     const result = await listItems({
       teamIds,
       status: query.status,
@@ -60,7 +54,6 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
       cursor: query.cursor,
       limit: query.limit,
     });
-
     res.json(result);
   } catch (err) {
     next(err);
@@ -70,7 +63,6 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
 router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = itemParamsSchema.parse(req.params);
-
     const item = await prisma.work_items.findUnique({
       where: { id },
       select: {
@@ -80,11 +72,10 @@ router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
         created_at: true, updated_at: true,
       },
     });
-
-    if (!item) {
-      throw new AppError(404, 'NOT_FOUND', 'Item not found');
-    }
-
+    if (!item) throw new AppError(404, 'NOT_FOUND', 'Item not found');
+    
+    // Import authorize dynamically to avoid circular dependency if any, or just import it
+    const { authorize } = await import('../auth/authorize.js');
     authorize(req.user!, item.team_id, 'viewer');
     res.json(item);
   } catch (err) {
@@ -96,18 +87,56 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response, next: Next
   try {
     const body = updateItemSchema.parse(req.body);
     const { id } = itemParamsSchema.parse(req.params);
+    const result = await updateItem(req.user!, id, body);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const item = await prisma.work_items.findUnique({
-      where: { id },
-      select: { id: true, team_id: true },
-    });
+router.post('/:id/claim', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = itemParamsSchema.parse(req.params);
+    const result = await claimItem(req.user!, id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (!item) {
-      throw new AppError(404, 'NOT_FOUND', 'Item not found');
-    }
+router.post('/:id/transition', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = transitionSchema.parse(req.body);
+    const { id } = itemParamsSchema.parse(req.params);
+    const result = await transitionItem(req.user!, id, body);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    authorize(req.user!, item.team_id, 'member');
-    res.json({ id: item.id, message: 'updated' });
+router.post('/:id/comments', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = commentSchema.parse(req.body);
+    const { id } = itemParamsSchema.parse(req.params);
+    const result = await addComment(req.user!, id, body.body);
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/activity', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = itemParamsSchema.parse(req.params);
+    const item = await prisma.work_items.findUnique({ where: { id }, select: { id: true, team_id: true } });
+    if (!item) throw new AppError(404, 'NOT_FOUND', 'Item not found');
+    
+    const { authorize } = await import('../auth/authorize.js');
+    authorize(req.user!, item.team_id, 'viewer');
+    
+    const events = await listActivity(id);
+    res.json(events);
   } catch (err) {
     next(err);
   }
