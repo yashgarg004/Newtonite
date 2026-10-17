@@ -9,7 +9,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/helpers/setup.ts'],
     env: {
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/ops_test',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/ops_test?connection_limit=5',
       JWT_SECRET: 'test-jwt-secret-that-is-at-least-32-characters-long-for-testing',
       JWT_EXPIRES_IN: '24h',
       NODE_ENV: 'test',

@@ -2,6 +2,17 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { decodeCursor, encodeCursor, Cursor } from '../lib/cursor';
 
+export interface WorkItemSummary {
+  id: string;
+  team_id: string;
+  title: string;
+  status: string;
+  priority: string;
+  assignee_id: string | null;
+  created_at: Date;
+  cursor_ts: string;
+}
+
 export async function listItems(params: {
   teamIds: string[];
   status?: string;
@@ -16,8 +27,8 @@ export async function listItems(params: {
     cursor = decodeCursor(params.cursor);
   }
 
-  const rows = await prisma.$queryRaw<any[]>`
-    SELECT w.id, w.team_id, w.title, w.status, w.priority, w.assignee_id, w.version, w.created_at, w.created_at::text AS cursor_ts
+  const rows = await prisma.$queryRaw<WorkItemSummary[]>`
+    SELECT w.id, w.team_id, w.title, w.status, w.priority, w.assignee_id, w.created_at, w.created_at::text AS cursor_ts
     FROM work_items w
     WHERE w.team_id = ANY(${params.teamIds}::uuid[])
     ${params.status ? Prisma.sql`AND w.status = ${params.status}::item_status` : Prisma.empty}
@@ -33,9 +44,11 @@ export async function listItems(params: {
   const items = hasMore ? rows.slice(0, params.limit) : rows;
 
   let nextCursor: string | null = null;
-  if (hasMore && items.length > 0) {
+  if (hasMore) {
     const last = items[items.length - 1];
-    nextCursor = encodeCursor({ ts: last.cursor_ts, id: last.id });
+    if (last) {
+      nextCursor = encodeCursor({ ts: last.cursor_ts, id: last.id });
+    }
   }
 
   return { items, nextCursor };
@@ -46,8 +59,8 @@ export async function getDashboard(
   teamIds: string[],
   leadAdminTeamIds: string[],
 ) {
-  const [assignedToMe, unassignedUrgent, awaitingApproval] = await Promise.all([
-    prisma.$queryRaw<any[]>`
+  const [assignedToMe, unassignedUrgent, awaitingApproval, recentlyResolved] = await Promise.all([
+    prisma.$queryRaw<WorkItemSummary[]>`
       SELECT id, team_id, title, status, priority, assignee_id, created_at
       FROM work_items
       WHERE assignee_id = ${userId}::uuid
@@ -55,7 +68,7 @@ export async function getDashboard(
         AND team_id = ANY(${teamIds}::uuid[])
       ORDER BY created_at DESC LIMIT 10
     `,
-    prisma.$queryRaw<any[]>`
+    prisma.$queryRaw<WorkItemSummary[]>`
       SELECT id, team_id, title, status, priority, assignee_id, created_at
       FROM work_items
       WHERE assignee_id IS NULL
@@ -64,14 +77,21 @@ export async function getDashboard(
         AND team_id = ANY(${teamIds}::uuid[])
       ORDER BY created_at DESC LIMIT 10
     `,
-    prisma.$queryRaw<any[]>`
+    prisma.$queryRaw<WorkItemSummary[]>`
       SELECT id, team_id, title, status, priority, assignee_id, created_at
       FROM work_items
       WHERE status = 'awaiting_approval'
         AND team_id = ANY(${leadAdminTeamIds}::uuid[])
       ORDER BY created_at DESC LIMIT 10
     `,
+    prisma.$queryRaw<WorkItemSummary[]>`
+      SELECT id, team_id, title, status, priority, assignee_id, created_at
+      FROM work_items
+      WHERE status IN ('resolved', 'closed')
+        AND team_id = ANY(${teamIds}::uuid[])
+      ORDER BY updated_at DESC LIMIT 10
+    `,
   ]);
 
-  return { assignedToMe, unassignedUrgent, awaitingApproval };
+  return { assignedToMe, unassignedUrgent, awaitingApproval, recentlyResolved };
 }

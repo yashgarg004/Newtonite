@@ -13,6 +13,7 @@ import {
 import { listItems } from './items.queries';
 import { createItem, updateItem, claimItem, transitionItem, addComment } from './items.service';
 import { listActivity } from './activity.service';
+import { authorize } from '../auth/authorize';
 
 const itemParamsSchema = z.object({ id: z.string().uuid() });
 const idempotencyKeySchema = z.string().min(8).max(128);
@@ -75,7 +76,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
     if (!item) throw new AppError(404, 'NOT_FOUND', 'Item not found');
     
     // Import authorize dynamically to avoid circular dependency if any, or just import it
-    const { authorize } = await import('../auth/authorize.js');
+    // const { authorize } = await import('../auth/authorize.js');
     authorize(req.user!, item.team_id, 'viewer');
     res.json(item);
   } catch (err) {
@@ -132,7 +133,7 @@ router.get('/:id/activity', requireAuth, async (req: Request, res: Response, nex
     const item = await prisma.work_items.findUnique({ where: { id }, select: { id: true, team_id: true } });
     if (!item) throw new AppError(404, 'NOT_FOUND', 'Item not found');
     
-    const { authorize } = await import('../auth/authorize.js');
+    // const { authorize } = await import('../auth/authorize.js');
     authorize(req.user!, item.team_id, 'viewer');
     
     const events = await listActivity(id);
