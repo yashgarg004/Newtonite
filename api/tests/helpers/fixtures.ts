@@ -57,7 +57,6 @@ export async function addMembership(
   });
 }
 
-// NEW HELPER: Create a user, a team, add membership, return user + teamId
 export async function createUserInTeam(role: member_role): Promise<{
   user: TestUser;
   teamId: string;
@@ -86,6 +85,8 @@ export async function createTestItem(
       type: overrides.type ?? 'task',
       created_by: createdBy,
       ...(overrides.assignee_id ? { assignee_id: overrides.assignee_id } : {}),
+      ...(overrides.status ? { status: overrides.status as any } : {}), // <-- ADDED
+      ...(overrides.priority ? { priority: overrides.priority as any } : {}), // <-- ADDED
     },
     select: { id: true, version: true },
   });

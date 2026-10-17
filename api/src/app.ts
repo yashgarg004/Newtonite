@@ -7,17 +7,16 @@ import { logger } from './lib/logger';
 import { errorHandler } from './errors/error-handler';
 import { prisma } from './db/prisma';
 import { authRoutes } from './auth/auth.routes';
-import { itemRoutes } from './items/items.routes'; 
+import { itemRoutes } from './items/items.routes';
+import { dashboardRoutes } from './dashboard/dashboard.routes'; 
 
 const app = express();
 
-// Request ID
 app.use((req, _res, next) => {
   req.id = randomUUID();
   next();
- });
+});
 
-// Logging
 app.use(
   pinoHttp({
     logger,
@@ -29,10 +28,8 @@ app.use(
   }),
 );
 
-// Body parsing
 app.use(express.json({ limit: '100kb' }));
 
-// CORS
 app.use(
   cors({
     origin: env.CORS_ORIGIN,
@@ -40,7 +37,6 @@ app.use(
   }),
 );
 
-// Health check
 app.get('/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -50,20 +46,16 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// Auth routes
 app.use('/auth', authRoutes);
+app.use('/items', itemRoutes);
+app.use('/dashboard', dashboardRoutes); 
 
-// Item routes (minimal stubs for Task 3 authorization tests)
-app.use('/items', itemRoutes); // <-- ADD THIS
-
-// 404 handler for unknown routes
 app.use((_req, res) => {
   res.status(404).json({
     error: { code: 'NOT_FOUND', message: 'Route not found' },
   });
 });
 
-// Error handler (must be last)
 app.use(errorHandler);
 
 export { app };
