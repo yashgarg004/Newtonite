@@ -6,6 +6,8 @@ import { env } from './config/env';
 import { logger } from './lib/logger';
 import { errorHandler } from './errors/error-handler';
 import { prisma } from './db/prisma';
+import { authRoutes } from './auth/auth.routes';
+import { itemRoutes } from './items/items.routes'; 
 
 const app = express();
 
@@ -13,7 +15,7 @@ const app = express();
 app.use((req, _res, next) => {
   req.id = randomUUID();
   next();
-});
+ });
 
 // Logging
 app.use(
@@ -48,7 +50,11 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// Routes will be added here in subsequent tasks
+// Auth routes
+app.use('/auth', authRoutes);
+
+// Item routes (minimal stubs for Task 3 authorization tests)
+app.use('/items', itemRoutes); // <-- ADD THIS
 
 // 404 handler for unknown routes
 app.use((_req, res) => {

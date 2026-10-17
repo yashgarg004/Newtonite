@@ -57,6 +57,17 @@ export async function addMembership(
   });
 }
 
+// NEW HELPER: Create a user, a team, add membership, return user + teamId
+export async function createUserInTeam(role: member_role): Promise<{
+  user: TestUser;
+  teamId: string;
+}> {
+  const team = await createTestTeam();
+  const user = await createTestUser();
+  await addMembership(user.id, team.id, role);
+  return { user, teamId: team.id };
+}
+
 export async function createTestItem(
   teamId: string,
   createdBy: string,
