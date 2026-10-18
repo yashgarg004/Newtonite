@@ -46,7 +46,7 @@ export async function getDashboard(
   teamIds: string[],
   leadAdminTeamIds: string[],
 ) {
-  const [assignedToMe, unassignedUrgent, awaitingApproval] = await Promise.all([
+  const [assignedToMe, unassignedUrgent, awaitingApproval, recentlyResolved] = await Promise.all([
     prisma.$queryRaw<any[]>`
       SELECT id, team_id, title, status, priority, assignee_id, created_at
       FROM work_items
