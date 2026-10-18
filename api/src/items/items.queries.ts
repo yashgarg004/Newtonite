@@ -71,7 +71,14 @@ export async function getDashboard(
         AND team_id = ANY(${leadAdminTeamIds}::uuid[])
       ORDER BY created_at DESC LIMIT 10
     `,
+    prisma.$queryRaw<any[]>`
+      SELECT id, team_id, title, status, priority, assignee_id, created_at
+      FROM work_items
+      WHERE status IN ('resolved', 'closed')
+        AND team_id = ANY(${teamIds}::uuid[])
+      ORDER BY updated_at DESC LIMIT 10
+    `,
   ]);
 
-  return { assignedToMe, unassignedUrgent, awaitingApproval };
+  return { assignedToMe, unassignedUrgent, awaitingApproval, recentlyResolved };
 }
