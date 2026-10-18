@@ -13,7 +13,19 @@ router.post('/login', async (req, res) => {
 
   const user = await prisma.users.findUnique({
     where: { email: body.email },
-    select: { id: true, email: true, name: true, password_hash: true },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      password_hash: true,
+      memberships: {
+        select: {
+          team_id: true,
+          role: true,
+          team: { select: { id: true, name: true } },
+        },
+      },
+    },
   });
 
   if (!user) {
@@ -31,7 +43,16 @@ router.post('/login', async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.id, email: user.email, name: user.name },
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      teams: user.memberships.map((m) => ({
+        id: m.team_id,
+        name: m.team.name,
+        role: m.role,
+      })),
+    },
   });
 });
 

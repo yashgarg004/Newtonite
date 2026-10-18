@@ -1,28 +1,29 @@
 import { logger } from './lib/logger';
 import { prisma, connectWithRetry } from './db/prisma';
+import { runWorker } from './outbox/worker';
 
 let running = true;
 
 async function main(): Promise<void> {
   await connectWithRetry();
-  logger.info('Outbox worker started');
+  logger.info('Outbox worker process started');
 
-  process.on('SIGTERM', () => {
-    logger.info('Worker received SIGTERM, stopping after current batch...');
+  const onShutdown = (signal: string) => {
+    logger.info({ signal }, 'Worker received shutdown signal, finishing in-flight jobs...');
     running = false;
-  });
-  process.on('SIGINT', () => {
-    logger.info('Worker received SIGINT, stopping after current batch...');
-    running = false;
-  });
+  };
 
-  while (running) {
-    // Worker implementation will be added in Task 6
-    await new Promise((r) => setTimeout(r, 2000));
+  process.on('SIGTERM', () => onShutdown('SIGTERM'));
+  process.on('SIGINT', () => onShutdown('SIGINT'));
+
+  try {
+    await runWorker(() => !running);
+  } catch (err) {
+    logger.error({ err }, 'Worker loop encountered unrecoverable error');
+  } finally {
+    await prisma.$disconnect();
+    logger.info('Worker stopped and database disconnected');
   }
-
-  await prisma.$disconnect();
-  logger.info('Worker stopped');
 }
 
 main().catch((err: unknown) => {

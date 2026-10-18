@@ -9,28 +9,36 @@ describe('Workflow', () => {
     const { user, teamId } = await createUserInTeam('lead');
     const item = await createTestItem(teamId, user.id, { status: 'open' });
 
-    await request(app)
+    const res = await request(app)
       .post(`/items/${item.id}/transition`)
       .set('Authorization', `Bearer ${user.token}`)
       .send({ to: 'closed', version: item.version })
-      .expect(409)
-      .then((res) => {
-        expect(res.body.error.code).toBe('INVALID_TRANSITION');
-      });
+      .expect(409);
+    expect(res.body.error.code).toBe('INVALID_TRANSITION');
+
+    const dbItem = await prisma.work_items.findUnique({ where: { id: item.id } });
+    expect(dbItem?.status).toBe('open');
+    expect(dbItem?.version).toBe(item.version);
+    const events = await prisma.activity_events.findMany({ where: { item_id: item.id } });
+    expect(events.length).toBe(0);
   });
 
   it('member approving gives 403 FORBIDDEN', async () => {
     const { user, teamId } = await createUserInTeam('member');
     const item = await createTestItem(teamId, user.id, { status: 'awaiting_approval' });
 
-    await request(app)
+    const res = await request(app)
       .post(`/items/${item.id}/transition`)
       .set('Authorization', `Bearer ${user.token}`)
       .send({ to: 'resolved', version: item.version })
-      .expect(403)
-      .then((res) => {
-        expect(res.body.error.code).toBe('FORBIDDEN');
-      });
+      .expect(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+
+    const dbItem = await prisma.work_items.findUnique({ where: { id: item.id } });
+    expect(dbItem?.status).toBe('awaiting_approval');
+    expect(dbItem?.version).toBe(item.version);
+    const events = await prisma.activity_events.findMany({ where: { item_id: item.id } });
+    expect(events.length).toBe(0);
   });
 
   it('lead approving succeeds and increments version', async () => {

@@ -28,8 +28,12 @@ describe('Concurrent claim', () => {
 
     expect(statuses).toEqual([200, 409, 409, 409, 409]);
 
+    const winnerIndex = results.findIndex((r) => r.status === 200);
+    expect(winnerIndex).toBeGreaterThanOrEqual(0);
+    const winnerUser = claimers[winnerIndex]!;
+
     const updated = await prisma.work_items.findUnique({ where: { id: item.id } });
-    expect(updated?.assignee_id).toBeTruthy();
+    expect(updated?.assignee_id).toBe(winnerUser.id);
     expect(updated?.version).toBe(item.version + 1);
     expect(updated?.status).toBe('in_progress');
 

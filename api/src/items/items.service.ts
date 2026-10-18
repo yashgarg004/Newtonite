@@ -7,7 +7,7 @@ import { authorize } from '../auth/authorize';
 import { ROLE_RANK, TRANSITIONS } from './transitions';
 import { enqueueJob } from '../outbox/enqueue';
 import type { AuthUser } from '../auth/auth.middleware';
-import type { item_status, member_role } from '@prisma/client';
+import type { item_status, member_role, item_priority, item_type } from '@prisma/client';
 
 export async function createItem(
   user: AuthUser,
@@ -49,8 +49,8 @@ export async function createItem(
         team_id: input.body.teamId,
         title: input.body.title,
         description: input.body.description,
-        type: input.body.type as any,
-        priority: input.body.priority as any,
+        type: input.body.type as item_type,
+        priority: input.body.priority as item_priority,
         status: 'open',
         created_by: user.id,
       },
@@ -81,7 +81,7 @@ export async function updateItem(
 ) {
   const item = await prisma.work_items.findUnique({
     where: { id: itemId },
-    select: { id: true, team_id: true, created_by: true, assignee_id: true, status: true },
+    select: { id: true, team_id: true, created_by: true, assignee_id: true, status: true, priority: true },
   });
 
   if (!item) throw new AppError(404, 'NOT_FOUND', 'Item not found');
@@ -111,7 +111,7 @@ export async function updateItem(
       data: {
         ...(input.title !== undefined && { title: input.title }),
         ...(input.description !== undefined && { description: input.description }),
-        ...(input.priority !== undefined && { priority: input.priority as any }),
+        ...(input.priority !== undefined && { priority: input.priority as item_priority }),
         ...(input.assignee_id !== undefined && { assignee_id: input.assignee_id }),
         version: { increment: 1 },
         updated_at: new Date(),
@@ -120,10 +120,31 @@ export async function updateItem(
 
     if (updated.count === 0) {
       const latest = await tx.work_items.findUnique({ where: { id: itemId } });
+      if (!latest) throw new AppError(404, 'NOT_FOUND', 'Item not found');
       throw new AppError(409, 'VERSION_CONFLICT', 'Stale version', { current: latest });
     }
 
-    await recordEvent(tx, { itemId, actorId: user.id, type: 'edited', payload: input });
+    if (input.title !== undefined || input.description !== undefined) {
+      await recordEvent(tx, {
+        itemId,
+        actorId: user.id,
+        type: 'edited',
+        payload: {
+          ...(input.title !== undefined && { title: input.title }),
+          ...(input.description !== undefined && { description: input.description }),
+        },
+      });
+    }
+
+    if (input.priority !== undefined && input.priority !== item.priority) {
+      await recordEvent(tx, {
+        itemId,
+        actorId: user.id,
+        type: 'priority_changed',
+        from: item.priority,
+        to: input.priority,
+      });
+    }
 
     if (input.assignee_id !== undefined && input.assignee_id !== item.assignee_id) {
       await recordEvent(tx, { itemId, actorId: user.id, type: 'assignee_changed', from: item.assignee_id, to: input.assignee_id });
@@ -155,7 +176,7 @@ export async function claimItem(user: AuthUser, itemId: string) {
         AND status = 'open'::item_status
     `;
 
-    if ((updated as any) === 0) {
+    if (Number(updated) === 0) {
       throw new AppError(409, 'ALREADY_CLAIMED', 'This item was already claimed or is no longer open');
     }
 
@@ -199,7 +220,7 @@ export async function transitionItem(user: AuthUser, itemId: string, input: { to
   return inTransaction(async (tx) => {
     const updated = await tx.work_items.updateMany({
       where: { id: itemId, status: item.status, version: input.version },
-      data: { status: input.to as any, version: { increment: 1 }, updated_at: new Date() },
+      data: { status: input.to as item_status, version: { increment: 1 }, updated_at: new Date() },
     });
 
     if (updated.count === 0) {

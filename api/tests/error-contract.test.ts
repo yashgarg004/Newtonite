@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/app';
+import { createUserInTeam, makeExpiredToken } from './helpers/fixtures';
 
 describe('Error contract', () => {
   it('returns 404 JSON for unknown routes', async () => {
@@ -21,6 +22,37 @@ describe('Error contract', () => {
     expect(res.body.error.message).toBe('Malformed JSON');
   });
 
+  it('returns 400 with details for bad request body', async () => {
+    const { user, teamId } = await createUserInTeam('member');
+    const res = await request(app)
+      .post('/items')
+      .set('Authorization', `Bearer ${user.token}`)
+      .set('Idempotency-Key', `bad-body-${Date.now()}`)
+      .send({ teamId, title: '', type: 'invalid_type' }); // empty title and bad type
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error).toHaveProperty('details');
+    expect(Array.isArray(res.body.error.details)).toBe(true);
+  });
+
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app).get('/items');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('returns 401 when expired token is provided', async () => {
+    const { user } = await createUserInTeam('member');
+    const expiredToken = makeExpiredToken(user.id);
+    const res = await request(app)
+      .get('/items')
+      .set('Authorization', `Bearer ${expiredToken}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    expect(res.body.error.message).toContain('Invalid or expired token');
+  });
+
   it('returns health check successfully', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
@@ -34,7 +66,19 @@ describe('Error contract', () => {
     expect(body).not.toContain('at ');
   });
 
-  it('error response has correct shape', async () => {
+  it('never exposes password_hash in login response', async () => {
+    const { user } = await createUserInTeam('member');
+    const res = await request(app)
+      .post('/auth/login')
+      .send({ email: user.email, password: 'password123' })
+      .expect(200);
+
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain('password_hash');
+    expect(bodyStr).not.toContain('argon2');
+  });
+
+  it('error response has standard shape { error: { code, message, details? } }', async () => {
     const res = await request(app).get('/nonexistent-route');
     expect(res.body).toHaveProperty('error');
     expect(res.body.error).toHaveProperty('code');
