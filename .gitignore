@@ -16,7 +16,7 @@ out/
 # Environment files (commit .env.example, never real secrets)
 .env
 .env.*
-.env.example
+!.env.example
 
 # Logs
 logs/
